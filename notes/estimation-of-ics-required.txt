@@ -1,0 +1,41 @@
+
+
+Aruino mega
+  16 analog inputs
+  54 digital outputs
+
+We have a 56 x 50 sensor array so need to expand the number of both inputs and outputs.
+
+We've got 2 options
+
+1. Try and understand the example and code provided by sensitronics
+http://sensitronics.com/tutorials/fsr-matrix-array/page2.php
+
+2. Work from first principles (using effectively same hardware)
+
+Looking at arduino basic documentation
+
+4051 analog multiplexor:
+http://playground.arduino.cc/Learning/4051
+
+595 shift register:
+https://www.arduino.cc/en/Tutorial/ShiftOut
+
+---
+If we follow the sensitronics model I think we need
+ 7 x 4051 ic's
+ 7 x 595 ic's
+ 14 x 0.1uF capacitors
+
+This will use only 1 analog input on the arduino (have to iterate over ic's might be slower)
+This will use 33 digital pins on the arduino
+
+---
+If we build up from basic circuit diagrams I think we need
+  7 x 4051 ic's
+  7 x 595 ic's
+  7 x 0.1uF capacitors
+  
+
+This could use 7 analog inputs on the arduino for faster sampling
+This could use 42 digital pins
