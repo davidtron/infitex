@@ -16,9 +16,10 @@ final static String ICON = "snowforce.png";
 final static String TITLE = "infi-tex";
 
 // max ad value to adopt
-final int MAXVAL = 255;
-int MAXDRIVE = 16;
-int MAXSENSE = 14;
+final int MAXVAL = 254;
+int MAXDRIVE = 32;
+int MAXSENSE = 32;
+int END_MARKER = 0xFF;
 
 // configuration parameters read from david.ini
 String DEVICE = "arduinomega";
@@ -36,8 +37,8 @@ boolean do_data_log = false;
 Serial a_port;
 String comPort;
 int baudRate=115200;
-boolean is_serial_read = false;
-String packetType="string";
+String packetType="compressed";
+PrintWriter debugLog;
 
 // data and statistics
 int[][] data;
@@ -69,7 +70,7 @@ int[] thresholdValue = {
 int thresholdValueIndex = 0;
 
 // misc.
-int visualizationType = 2; // 2 (2D) or 3 (3D).
+int visualizationType = 3; // 2 (2D) or 3 (3D).
 boolean printDebugInfo = false;
 int plotMethod = 0; // interp, separate interp, and cylinder
 boolean drawGrid = true;
@@ -80,6 +81,8 @@ boolean zDir = true;
 boolean drawHeatmap = false;
 boolean drawMessages = true;
 boolean showMeasurement = true;
+
+int globalCount = 0;
 
 void setup()
 {
@@ -107,6 +110,8 @@ void setup()
     setupControl(); // setup gui controls
     
     cam.lookAt(frame.getWidth()/2, frame.getHeight()/2, 0, (width/800)*1000);
+    
+    debugLog = createWriter("infitex-debug.log"); 
 }
 
 void readINI(File selection)
@@ -122,8 +127,8 @@ void readINI(File selection)
     DEVICE = tokens[1];
     if (DEVICE.equals("arduinomega"))
     {
-        MAXDRIVE = 14;
-        MAXSENSE = 16;
+        MAXDRIVE = 32;
+        MAXSENSE = 32;
     }
     else if (DEVICE.equals("mc1509"))
     {
@@ -448,7 +453,6 @@ void visualization3D()
 boolean getData()
 {
     // lock buffer.
-    is_serial_read = true;
     //print("*");
 
     // request data
@@ -459,15 +463,12 @@ boolean getData()
     // read the serial buffer:
     int [] sensors = new int[NDRIVE*NSENSE];
     
-    if (packetType.equals("string"))
-    {   
-        
+    if (packetType.equals("string")) {     
         String myString = a_port.readStringUntil('\n');
         if (myString == null) {
           print(".");
           return false;
         }
-        
         println("got data " + myString);
     
         // if you got any bytes other than the linefeed:
@@ -476,19 +477,17 @@ boolean getData()
         // split the string at the commas
         // and convert the sections into integers:
         sensors = int(split(myString, ','));
-    }
-    else if (packetType.equals("binary"))
-    {
+    } else if (packetType.equals("binary")) {
         int[] resp = new int[NDRIVE*NSENSE];
         byte[] buffer = new byte[NDRIVE*NSENSE];
         int nread = 0;
         int offset = 0;
-        while (true)
-        {
-            if (a_port.available() > 0)
-            {
+        while (true) {
+            if (a_port.available() > 0) {
                 nread = a_port.readBytes(buffer);
-                for (int i = 0; i < nread; i++) resp[offset + i] = (int)(buffer[i]) & 0xFF;
+                for (int i = 0; i < nread; i++) { 
+                  resp[offset + i] = (int)(buffer[i]) & 0xFF;
+                }
                 offset += nread;
             }
             if (offset == NDRIVE*NSENSE) break;
@@ -496,7 +495,67 @@ boolean getData()
         
         if (offset != NDRIVE*NSENSE) return false;
         
-        for (int i = 0; i < sensors.length; i++) sensors[i] = resp[i];
+        for (int i = 0; i < sensors.length; i++) { 
+          // Copy the data into sensors
+          sensors[i] = resp[i];
+        }
+    } else if (packetType.equals("compressed")) {
+        boolean got_zero = false;
+        int[] resp = new int[NDRIVE*NSENSE];
+        int offset = 0;
+        debugLog.println("trying for data " + globalCount);
+        
+        while (true) {
+            if (a_port.available() > 0) {
+              byte got_byte = (byte) a_port.read();
+              int unsigned_force = got_byte & 0xFF;
+              if(unsigned_force == END_MARKER) {
+                // End of the frame
+                debugLog.println("End frame");
+                break;
+              } else if(got_zero) {
+                debugLog.println("found 0s = "+unsigned_force + ". Offset is " + offset);
+
+                // We send 0 as 2 bytes, the 0 then the amount
+                for(int i = 0; i < unsigned_force; i ++) {
+                    // Add 0's to resp here. Sometimes this is bigger than the array - how?
+                    if(offset+i < resp.length) {
+                      resp[offset+i]=0;                      
+                    } else {
+                      debugLog.println("Somehow bigger than the array?");
+                      return false;
+                    }
+                    
+
+                }
+                
+                // Increment the reading for the number of 0s we just inserted
+                offset = offset + unsigned_force;
+                got_zero = false;
+              } else if(got_byte == 0) {
+                // Store that we got zero so we know next byte is how many zeros
+                got_zero = true;
+              } else {
+                debugLog.println("found "+unsigned_force + ". Offset is " + offset);
+                resp[offset] = unsigned_force;
+                offset++;
+              }
+            } else {
+              debugLog.println("not bytes available?");
+            }
+        }
+        
+        // Error check
+        if (offset != NDRIVE*NSENSE) {
+          debugLog.println("Incorrect amount of data received offset was " + offset +". Expected "+ NDRIVE*NSENSE);
+          return false;
+        } else {
+          debugLog.println("Correct frame of data");
+        }
+        for (int i = 0; i < sensors.length; i++) { 
+          // Copy the data into sensors
+          sensors[i] = resp[i];
+        }
     }
     
 
@@ -517,11 +576,12 @@ boolean getData()
         print(sensors.length);
         println(" bytes. Expected " + MAXDRIVE*MAXSENSE);
 
-        // unlock buffer
-        is_serial_read = false;
+
         return false;
     }
 
+    globalCount++;
+    debugLog.flush();
     // create information for gui.     
     strSensorData = "";
     sensorFrameRate = millis() - current_time;
@@ -579,9 +639,6 @@ boolean getData()
 
     // update curren time
     current_time = millis();
-
-    // unlock buffer
-    is_serial_read = false;
 
     return true;
 }

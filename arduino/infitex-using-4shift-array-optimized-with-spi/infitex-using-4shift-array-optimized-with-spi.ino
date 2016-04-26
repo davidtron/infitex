@@ -1,3 +1,11 @@
+/**
+ * Code is based on an amalgamation of:
+ *  Initial optimisation based on sensitronics: http://sensitronics.com/tutorials/fsr-matrix-array/page6.php
+ *  Since we are using the shift register breakout board: http://maximumoctopus.com/electronics/ultrashiftotron.htm#
+ *  Subsequently optimised to use SPI instead software shiftOut:  http://forum.arduino.cc/index.php?topic=52383.0
+ *  
+ *  This does not need an arduino mega and can be run on a smaller cheaper arduino compatible board.
+ */
 #include <SPI.h>
 
 #define BAUD_RATE                 115200
@@ -8,9 +16,16 @@
 #define PIN_ADC_INPUT             A0
 
 // Input pins on the ultra-shift-o-tron (quad 74HC595 shift register breakout board)
-#define PIN_LATCH_ST_CP           2
-#define PIN_CLOCK_SH_CP           3
-#define PIN_DATA_DS               4
+// ARDUINO Mega Pin 52 (SPI:SCK)                   --->  74HC595 Pin 11 (SCK "Shift register clock input") SH_CP
+// ARDUINO Mega Pin 51 (SPI:MOSI)                  --->  74HC595 Pin 14 (SER "Serial Data Input") DS
+// ARDUINO Mega Pin 53 SS (generic digital output) --->  74HC595 Pin 12 (RCK "Storage register clock input") ST_CP
+
+// ARDUINO UNO Pin 13 (SPI:SCK)                    --->  74HC595 Pin 11 (SCK "Shift register clock input")  SH_CP
+// ARDUINO UNO Pin 11 (SPI:MOSI)                   --->  74HC595 Pin 14 (SER "Serial Data Input") DS
+// ARDUINO UNO Pin 10 SS (generic digital output)  --->  74HC595 Pin 12 (RCK "Storage register clock input") ST_CP
+
+#define SHIFT_REGISTER_LATCH_SS (53)
+// The other pins for SCK and MOSI are defined by SPI library and do not need to be controlled in this sketch
 
 // Channel pins 0, 1, 2 for multiplexors must be wired to consecutive Arduino pins
 #define PIN_MUX_CHANNEL_0         5  
@@ -41,10 +56,21 @@ int compressed_zero_count = 0;
 void setup() { 
   Serial.begin(BAUD_RATE);
   
-  // Setup pins to output so you can control the shift register
-  pinMode(PIN_LATCH_ST_CP, OUTPUT);
-  pinMode(PIN_CLOCK_SH_CP, OUTPUT);
-  pinMode(PIN_DATA_DS, OUTPUT);
+  //initialize SPI:  
+  SPI.setBitOrder(MSBFIRST);
+  SPI.begin();
+  pinMode(SHIFT_REGISTER_LATCH_SS, OUTPUT);
+  // The other pins for SCK and MOSI are defined by SPI library and do not need to be controlled in this sketch
+ 
+  //clear all shift registers so that all output pins go low.
+  // If we chained another ultashiftotron board there would be another 4 bytes zeroed here
+  
+  SPI.transfer(0x00);
+  SPI.transfer(0x00);
+  SPI.transfer(0x00);
+  SPI.transfer(0x00);
+  digitalWrite(SHIFT_REGISTER_LATCH_SS, LOW);
+  digitalWrite(SHIFT_REGISTER_LATCH_SS, HIGH);
 
   // Set up pins to control the array of multiplexors
   pinMode(PIN_MUX_CHANNEL_0, OUTPUT);
@@ -52,8 +78,13 @@ void setup() {
   pinMode(PIN_MUX_CHANNEL_2, OUTPUT);
   pinMode(PIN_MUX_INHIBIT_0, OUTPUT);
   pinMode(PIN_MUX_INHIBIT_1, OUTPUT);
+  pinMode(PIN_MUX_INHIBIT_2, OUTPUT);
+  pinMode(PIN_MUX_INHIBIT_3, OUTPUT);
 }
 
+/**
+ * Main run loop sends reading of the entire matrix per loop
+ */
 void loop() {
   compressed_zero_count = 0;
   
@@ -66,7 +97,7 @@ void loop() {
       int raw_reading = analogRead(PIN_ADC_INPUT);
       byte send_reading = (byte) (lowByte(raw_reading >> 2));
       sendCompressed(send_reading);
-    }
+    } 
   }
   if(compressed_zero_count > 0) {
         Serial.write((byte) 0);
@@ -103,45 +134,25 @@ void setRow(int row_number) {
  * Send to ultrashiftotron
  */
 void setColumn(int rowNumber) {
-
   unsigned long bitpattern = 1<<rowNumber; 
-  
-  // tell the 595s we're about to add some new data!
-  digitalWrite(PIN_LATCH_ST_CP, LOW);
 
-  // This block sets the bit pattern of what to write out
-  // if we wanted to add 8 595's we would call 8 shifts
-  // TODO: cleaned up with a loop to make code more manageable.
-  // See what arbitrary number bit shifted
-  shiftOut(PIN_DATA_DS, PIN_CLOCK_SH_CP, MSBFIRST, ((bitpattern >> 24) & 255));
-  shiftOut(PIN_DATA_DS, PIN_CLOCK_SH_CP, MSBFIRST, ((bitpattern >> 16) & 255));
-  shiftOut(PIN_DATA_DS, PIN_CLOCK_SH_CP, MSBFIRST, ((bitpattern >> 8) & 255));
-  shiftOut(PIN_DATA_DS, PIN_CLOCK_SH_CP, MSBFIRST, (bitpattern & 255));
+  // If we chained another ultashiftotron board there would be another 4 bytes sent here shifted as 56,48,40,32
 
-  //tell the 595s to ouput our data. 
-  digitalWrite(PIN_LATCH_ST_CP, HIGH);
+
+  SPI.transfer(((bitpattern >> 24) & 255));
+  SPI.transfer(((bitpattern >> 16) & 255));
+  SPI.transfer(((bitpattern >> 8) & 255));
+  SPI.transfer((bitpattern & 255));
+
+  digitalWrite(SHIFT_REGISTER_LATCH_SS, LOW);
+  digitalWrite(SHIFT_REGISTER_LATCH_SS, HIGH);
 }
 
-/**********************************************************************************************************
-* printFixed() - print a value padded with leading spaces such that the value always occupies a fixed
-* number of characters / space in the output terminal.
-**********************************************************************************************************/
-void printFixed(byte value) {
-  if(value < 10)
-  {
-    Serial.print("  ");
-  }
-  else if(value < 100)
-  {
-    Serial.print(" ");
-  }
-  Serial.print(value);
-}
 
-/**********************************************************************************************************
-* sendCompressed() - If value is nonzero, send it via serial terminal as a single byte. If value is zero,
-* increment zero count. The current zero count is sent and cleared before the next nonzero value
-**********************************************************************************************************/
+/**
+ * sendCompressed() - If value is nonzero, send it via serial terminal as a single byte. If value is zero,
+ * increment zero count. The current zero count is sent and cleared before the next nonzero value
+ */
 void sendCompressed(byte value) {
   if(value < MIN_SEND_VALUE) {
     if(compressed_zero_count < (COMPRESSED_ZERO_LIMIT - 1)) {
