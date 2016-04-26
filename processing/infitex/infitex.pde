@@ -17,8 +17,8 @@ final static String TITLE = "infi-tex";
 
 // max ad value to adopt
 final int MAXVAL = 254;
-int MAXDRIVE = 32;
-int MAXSENSE = 32;
+int MAXDRIVE = 64;
+int MAXSENSE = 64;
 int END_MARKER = 0xFF;
 
 // configuration parameters read from david.ini
