@@ -38,7 +38,6 @@ Serial a_port;
 String comPort;
 int baudRate=115200;
 String packetType="compressed";
-PrintWriter debugLog;
 
 // data and statistics
 int[][] data;
@@ -82,7 +81,6 @@ boolean drawHeatmap = false;
 boolean drawMessages = true;
 boolean showMeasurement = true;
 
-int globalCount = 0;
 
 void setup()
 {
@@ -110,8 +108,6 @@ void setup()
     setupControl(); // setup gui controls
     
     cam.lookAt(frame.getWidth()/2, frame.getHeight()/2, 0, (width/800)*1000);
-    
-    debugLog = createWriter("infitex-debug.log"); 
 }
 
 void readINI(File selection)
@@ -503,7 +499,7 @@ boolean getData()
         boolean got_zero = false;
         int[] resp = new int[NDRIVE*NSENSE];
         int offset = 0;
-        debugLog.println("trying for data " + globalCount);
+        //println("trying for data");
         
         while (true) {
             if (a_port.available() > 0) {
@@ -511,10 +507,9 @@ boolean getData()
               int unsigned_force = got_byte & 0xFF;
               if(unsigned_force == END_MARKER) {
                 // End of the frame
-                debugLog.println("End frame");
                 break;
               } else if(got_zero) {
-                debugLog.println("found 0s = "+unsigned_force + ". Offset is " + offset);
+                //println("found 0s = "+unsigned_force + ". Offset is " + offset);
 
                 // We send 0 as 2 bytes, the 0 then the amount
                 for(int i = 0; i < unsigned_force; i ++) {
@@ -522,11 +517,9 @@ boolean getData()
                     if(offset+i < resp.length) {
                       resp[offset+i]=0;                      
                     } else {
-                      debugLog.println("Somehow bigger than the array?");
+                      //println("Somehow bigger than the array?");
                       return false;
                     }
-                    
-
                 }
                 
                 // Increment the reading for the number of 0s we just inserted
@@ -536,21 +529,27 @@ boolean getData()
                 // Store that we got zero so we know next byte is how many zeros
                 got_zero = true;
               } else {
-                debugLog.println("found "+unsigned_force + ". Offset is " + offset);
+                //println("found "+unsigned_force + ". Offset is " + offset);
                 resp[offset] = unsigned_force;
                 offset++;
               }
             } else {
-              debugLog.println("not bytes available?");
+              // We get here while the array is reading and compressing zero's, we need to do something to stop
+              // hammering the a_port.available()
+              try {
+               Thread.sleep(1);
+              } catch(InterruptedException ie) {
+               println("Could not sleep while waiting");
+              }
             }
         }
         
         // Error check
         if (offset != NDRIVE*NSENSE) {
-          debugLog.println("Incorrect amount of data received offset was " + offset +". Expected "+ NDRIVE*NSENSE);
+          //println("Incorrect amount of data received offset was " + offset +". Expected "+ NDRIVE*NSENSE);
           return false;
         } else {
-          debugLog.println("Correct frame of data");
+          //println("Correct frame of data");
         }
         for (int i = 0; i < sensors.length; i++) { 
           // Copy the data into sensors
@@ -563,25 +562,19 @@ boolean getData()
     // get min and max value of current frame.
     minFrame = 100000;
     maxFrame = 0;
-    for (int i = 0; i < sensors.length; i++)
-    {
+    for (int i = 0; i < sensors.length; i++) {
         if (sensors[i] < minFrame) minFrame = sensors[i];
         if (sensors[i] > maxFrame) maxFrame = sensors[i];
     }
 
     // error checking.
-    if (sensors.length != MAXDRIVE*MAXSENSE)
-    {
+    if (sensors.length != MAXDRIVE*MAXSENSE) {
         print("Incorrect data: ");
         print(sensors.length);
         println(" bytes. Expected " + MAXDRIVE*MAXSENSE);
-
-
         return false;
     }
 
-    globalCount++;
-    debugLog.flush();
     // create information for gui.     
     strSensorData = "";
     sensorFrameRate = millis() - current_time;
@@ -589,25 +582,21 @@ boolean getData()
     // copy sensor data to variables for gui
     // preprocessing (filtering) is done here.
     int k = 0;
-    for (int i = 0; i < data.length; i++)
-    {
-        for (int j = 0; j < data[0].length; j++)
-        {
+    for (int i = 0; i < data.length; i++) {
+        for (int j = 0; j < data[0].length; j++) {
             // offset removal
-            if (doBackgroundNoiseFiltering == true)
-            {
-
+            if (doBackgroundNoiseFiltering == true) {
                 data[driveindex[i]][senseindex[j]] = sensors[k++] - backgroundNoise[driveindex[i]][senseindex[j]];
                 if (data[driveindex[i]][senseindex[j]] < 0) data[driveindex[i]][senseindex[j]] = 0;
-            } else
-            {
+            } else {
                 data[driveindex[i]][senseindex[j]] = sensors[k++];
             }
 
             // thresholding
-            if (thresholdValueIndex != 0)
-            {
-                if (data[driveindex[i]][senseindex[j]] < thresholdValue[thresholdValueIndex]) data[driveindex[i]][senseindex[j]] = 0;
+            if (thresholdValueIndex != 0) {
+                if (data[driveindex[i]][senseindex[j]] < thresholdValue[thresholdValueIndex]) { 
+                data[driveindex[i]][senseindex[j]] = 0; 
+              }
             }
 
             strSensorData += data[driveindex[i]][senseindex[j]] + ",";
@@ -616,8 +605,7 @@ boolean getData()
     }
 
     // debug print
-    if (printDebugInfo == true)
-    {
+    if (printDebugInfo == true) {
         print("DT:");
         print(sensorFrameRate);
         print("ms, ");
@@ -626,10 +614,8 @@ boolean getData()
         print(", ");
         print(data[0].length);
         print("): [");
-        for (int i = 0; i < data.length; i++)
-        {
-            for (int j = 0; j < data[i].length; j++)
-            {
+        for (int i = 0; i < data.length; i++) {
+            for (int j = 0; j < data[i].length; j++) {
                 print(data[i][j]);
                 print(",");
             }
