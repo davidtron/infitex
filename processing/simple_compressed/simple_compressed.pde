@@ -9,7 +9,7 @@ import processing.serial.*;
 * CONSTANTS
 **********************************************************************************************************/
 int COLS = 32;
-int ROWS = 32;
+int  ROWS = 32;
 int CELL_SIZE = 20;
 int END_MARKER = 0xFF;
 int SCALE_READING = 2;

@@ -32,7 +32,7 @@
 #define PIN_MUX_CHANNEL_1         6
 #define PIN_MUX_CHANNEL_2         7
 
-// inhibit = active low enable. All mux IC enables must be wired to consecutive Arduino pins
+// inhibit = active low enable. All multiplexors IC enables must be wired to consecutive Arduino pins
 #define PIN_MUX_INHIBIT_0         8 
 #define PIN_MUX_INHIBIT_1         9
 #define PIN_MUX_INHIBIT_2         10
@@ -133,16 +133,14 @@ void setRow(int row_number) {
 /**
  * Send to ultrashiftotron
  */
-void setColumn(int rowNumber) {
-  unsigned long bitpattern = 1<<rowNumber; 
+void setColumn(int columnNumber) {
+  unsigned long bitpattern = 1l<<columnNumber; 
 
   // If we chained another ultashiftotron board there would be another 4 bytes sent here shifted as 56,48,40,32
-
-
-  SPI.transfer(((bitpattern >> 24) & 255));
-  SPI.transfer(((bitpattern >> 16) & 255));
-  SPI.transfer(((bitpattern >> 8) & 255));
-  SPI.transfer((bitpattern & 255));
+  SPI.transfer(bitpattern >> 24);
+  SPI.transfer(bitpattern >> 16);
+  SPI.transfer(bitpattern >> 8);
+  SPI.transfer(bitpattern);
 
   digitalWrite(SHIFT_REGISTER_LATCH_SS, LOW);
   digitalWrite(SHIFT_REGISTER_LATCH_SS, HIGH);
