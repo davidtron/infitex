@@ -1,0 +1,32 @@
+To reduce amount of data sent via serial we use a simple 0 encoding format.  This adds complexity as each frame can be of different size on the visualisation end, but assumes processing power is significantly faster than serial read/write.
+
+Reading value range is 1 to 254
+Packet end is 0xFF
+Maximum zero count is 254
+
+For a 4x4 array, with no pressure:
+
+0 0 0 0
+0 0 0 0
+0 0 0 0
+0 0 0 0
+
+We send via serial: 0,16,ENDPACKET
+
+For a 4x4, with the pad fully loaded:
+
+254 254 254 254
+254 254 254 254
+254 254 254 254
+254 254 254 254
+
+We send via serial: 254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,ENDPACKET
+
+For a 4x4, with the pad with some pressure:
+
+0   0   0   0
+0   42  0   0
+21  200 16  0
+0   49  0   0
+
+We send via serial 0,5,420,2,21,200,16,0,2,49,0,2,ENDPACKET

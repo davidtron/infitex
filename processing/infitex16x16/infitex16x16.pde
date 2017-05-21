@@ -446,86 +446,88 @@ void visualization3D()
 }
 
 // data acquisition
-boolean getData()
-{
-    // lock buffer.
-    //print("*");
+boolean getData() {
+      
+  
+  
+    
+    
 
     // request data
     //a_port.write("A");
    
-
-    
     // read the serial buffer:
     int [] sensors = new int[NDRIVE*NSENSE];
     
-    if (packetType.equals("compressed")) {
-        boolean got_zero = false;
-        int[] resp = new int[NDRIVE*NSENSE];
-        int offset = 0;
-        //println("trying for data");
-        
-        while (true) {
-            if (a_port.available() > 0) {
-              byte got_byte = (byte) a_port.read();
-              int unsigned_force = got_byte & 0xFF;
-              if(offset >= NDRIVE*NSENSE) {
-                println("offset too big?");
-                break;
-              }
-              
-              
-              if(unsigned_force == END_MARKER) {
-                // End of the frame
-                break;
-              } else if(got_zero) {
-                //println("found 0s = "+unsigned_force + ". Offset is " + offset);
+    boolean got_zero = false;
+    
+    int[] resp = new int[NDRIVE*NSENSE];
+    int offset = 0;
+    //println("trying for data");
+    
+    while (true) {
+        if (a_port.available() > 0) {
+          byte got_byte = (byte) a_port.read();
+          
+          int unsigned_force = got_byte & 0xFF;
+     
+          if(offset >= NDRIVE*NSENSE) {
+            println("offset too big?" + offset);
+            break;
+          }
+          
+         
+          if(unsigned_force == END_MARKER) {
+            // End of the frame
+            break;
+          } else if(got_zero) {
+            //println("found 0s = "+unsigned_force + ". Offset is " + offset);
 
-                // We send 0 as 2 bytes, the 0 then the amount
-                for(int i = 0; i < unsigned_force; i ++) {
-                    // Add 0's to resp here. Sometimes this is bigger than the array - how?
-                    if(offset+i < resp.length) {
-                      resp[offset+i]=0;                      
-                    } else {
-                      println("Somehow bigger than the array?");
-                      return false;
-                    }
+            // We send 0 as 2 bytes, the 0 then the amount
+            for(int i = 0; i < unsigned_force; i ++) {
+                // Add 0's to resp here. Sometimes this is bigger than the array - how?
+                if(offset+i < resp.length) {
+                  resp[offset+i]=0;                      
+                } else {
+                  println("Somehow bigger than the array?");
+                  return false;
                 }
-                
-                // Increment the reading for the number of 0s we just inserted
-                offset = offset + unsigned_force;
-                got_zero = false;
-              } else if(got_byte == 0) {
-                // Store that we got zero so we know next byte is how many zeros
-                got_zero = true;
-              } else {
-                //println("found "+unsigned_force + ". Offset is " + offset);
-                resp[offset] = unsigned_force;
-                offset++;
-              }
-            } else {
-              // We get here while the array is reading and compressing zero's, we need to do something to stop
-              // hammering the a_port.available()
-              try {
-               Thread.sleep(1);
-              } catch(InterruptedException ie) {
-               println("Could not sleep while waiting");
-              }
             }
-        }
-        
-        // Error check
-        if (offset != NDRIVE*NSENSE) {
-          //println("Incorrect amount of data received offset was " + offset +". Expected "+ NDRIVE*NSENSE);
-          return false;
+            
+            // Increment the reading for the number of 0s we just inserted
+            offset = offset + unsigned_force;
+            got_zero = false;
+          } else if(got_byte == 0) {
+            // Store that we got zero so we know next byte is how many zeros
+            got_zero = true;
+          } else {
+            //println("found "+unsigned_force + ". Offset is " + offset);
+            resp[offset] = unsigned_force;
+            offset++;
+          }
         } else {
-          //println("Correct frame of data");
-        }
-        for (int i = 0; i < sensors.length; i++) { 
-          // Copy the data into sensors
-          sensors[i] = resp[i];
+          // We get here while the array is reading and compressing zero's, we need to do something to stop
+          // hammering the a_port.available()
+          try {
+           Thread.sleep(1);
+          } catch(InterruptedException ie) {
+           println("Could not sleep while waiting");
+          }
         }
     }
+    
+    // Error check
+    if (offset != NDRIVE*NSENSE) {
+      //println("Incorrect amount of data received offset was " + offset +". Expected "+ NDRIVE*NSENSE);
+      return false;
+    } else {
+      //println("Correct frame of data");
+    }
+    for (int i = 0; i < sensors.length; i++) { 
+      // Copy the data into sensors
+      sensors[i] = resp[i];
+    }
+    
     
 
     // statistics of sensor data.
@@ -538,12 +540,14 @@ boolean getData()
     }
 
     // error checking.
-    if (sensors.length != MAXDRIVE*MAXSENSE) {
+    if (sensors.length != NDRIVE*NSENSE) {
         print("Incorrect data: ");
         print(sensors.length);
-        println(" bytes. Expected " + MAXDRIVE*MAXSENSE);
+        println(" bytes. Expected " + NDRIVE*NSENSE);
         return false;
     }
+    
+    //----------------------------------------
 
     // create information for gui.     
     strSensorData = "";
